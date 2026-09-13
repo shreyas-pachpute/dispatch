@@ -1,0 +1,30 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+
+# node
+node_modules/
+.next/
+out/
+
+# env and secrets
+.env
+.env.*
+!.env.example
+
+# data and runtime
+data/runtime/
+evals/reports/*.json
+*.log
+
+# os / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
