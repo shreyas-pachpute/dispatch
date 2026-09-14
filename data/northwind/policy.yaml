@@ -1,0 +1,26 @@
+# Approval matrix. Evaluated in code, never by a model.
+# decision: auto (execute, then tell you) | notify (execute and flag) | approve (wait for you)
+currency: USD
+actions:
+  queue_payment:
+    auto_below: 2000
+    else: approve
+  supplier_query:
+    default: approve
+  hold_invoice:
+    default: notify
+  customer_reply:
+    informational: notify
+    complaint: approve
+    other: approve
+  schedule_reminder:
+    auto_below: 2000
+    sensitive: approve
+    else: approve
+  escalate:
+    default: approve
+time_estimates_minutes:
+  supplier_invoice: 12
+  customer_email: 8
+  scheduled: 25
+  question: 15

@@ -1,0 +1,54 @@
+{
+  "customers": [
+    { "id": "C-100", "name": "Brightline Retail", "email": "ops@brightline.example", "segment": "retail", "sensitive": false },
+    { "id": "C-101", "name": "Corvid Labs", "email": "purchasing@corvid.example", "segment": "lab", "sensitive": false },
+    { "id": "C-102", "name": "Meridian Health Group", "email": "ap@meridianhealth.example", "segment": "healthcare", "sensitive": true },
+    { "id": "C-103", "name": "Sable & Finch", "email": "accounts@sablefinch.example", "segment": "hospitality", "sensitive": false },
+    { "id": "C-104", "name": "Tessera Studios", "email": "hello@tessera.example", "segment": "creative", "sensitive": false }
+  ],
+  "suppliers": [
+    { "id": "S-10", "name": "Apex Packaging", "email": "billing@apexpackaging.example", "class": "preferred", "variance_tolerance": 0.02 },
+    { "id": "S-11", "name": "Nordic Freight", "email": "invoices@nordicfreight.example", "class": "standard", "variance_tolerance": 0.0 },
+    { "id": "S-12", "name": "Harbor Tech Services", "email": "ar@harbortech.example", "class": "standard", "variance_tolerance": 0.0 }
+  ],
+  "orders": [
+    { "id": "4821", "customer_id": "C-100", "placed": "2026-09-08", "items": "40 × archive boxes, 12 × label rolls", "total": 612.0, "status": "shipped" },
+    { "id": "4822", "customer_id": "C-101", "placed": "2026-09-09", "items": "6 × lab stools", "total": 1140.0, "status": "processing" },
+    { "id": "4819", "customer_id": "C-103", "placed": "2026-09-02", "items": "200 × guest folders", "total": 980.0, "status": "delivered" },
+    { "id": "4823", "customer_id": "C-104", "placed": "2026-09-10", "items": "2 × standing desks", "total": 1580.0, "status": "processing" }
+  ],
+  "shipments": [
+    { "order_id": "4821", "carrier": "Coastal Express", "tracking": "CX-77120-88", "shipped": "2026-09-11", "eta": "2026-09-15", "status": "in transit" },
+    { "order_id": "4819", "carrier": "Coastal Express", "tracking": "CX-77004-10", "shipped": "2026-09-03", "eta": "2026-09-05", "status": "delivered" }
+  ],
+  "purchase_orders": [
+    { "id": "PO-1042", "supplier_id": "S-10", "issued": "2026-08-28", "lines": [
+      { "description": "Corrugated shipping cartons 18x12x10", "quantity": 400, "unit_price": 3.1 },
+      { "description": "Kraft void fill, 500 ft roll", "quantity": 20, "unit_price": 14.0 },
+      { "description": "Packing tape 48mm, case of 36", "quantity": 8, "unit_price": 40.0 }
+    ], "total": 1840.0 },
+    { "id": "PO-1043", "supplier_id": "S-11", "issued": "2026-08-30", "lines": [
+      { "description": "Pallet freight, Oslo to Surat lane, per pallet", "quantity": 60, "unit_price": 12.0 }
+    ], "total": 720.0 },
+    { "id": "PO-1044", "supplier_id": "S-12", "issued": "2026-08-25", "lines": [
+      { "description": "Warehouse scanner units WS-40", "quantity": 8, "unit_price": 650.0 },
+      { "description": "Charging cradles", "quantity": 8, "unit_price": 150.0 }
+    ], "total": 6400.0 }
+  ],
+  "receipts": [
+    { "po_id": "PO-1042", "received": "2026-09-05", "lines": [ { "description": "Corrugated shipping cartons 18x12x10", "quantity": 400 }, { "description": "Kraft void fill, 500 ft roll", "quantity": 20 }, { "description": "Packing tape 48mm, case of 36", "quantity": 8 } ] },
+    { "po_id": "PO-1043", "received": "2026-09-06", "lines": [ { "description": "Pallet freight, Oslo to Surat lane, per pallet", "quantity": 60 } ] },
+    { "po_id": "PO-1044", "received": "2026-09-09", "lines": [ { "description": "Warehouse scanner units WS-40", "quantity": 8 }, { "description": "Charging cradles", "quantity": 8 } ] }
+  ],
+  "invoices_out": [
+    { "id": "NW-5101", "customer_id": "C-100", "issued": "2026-07-28", "due": "2026-08-11", "amount": 1240.0, "status": "open", "paid": null },
+    { "id": "NW-5102", "customer_id": "C-101", "issued": "2026-08-01", "due": "2026-08-15", "amount": 860.0, "status": "open", "paid": null },
+    { "id": "NW-5103", "customer_id": "C-102", "issued": "2026-08-02", "due": "2026-08-16", "amount": 4500.0, "status": "open", "paid": null },
+    { "id": "NW-5104", "customer_id": "C-103", "issued": "2026-08-20", "due": "2026-09-03", "amount": 980.0, "status": "paid", "paid": "2026-09-01" },
+    { "id": "NW-5105", "customer_id": "C-104", "issued": "2026-09-01", "due": "2026-09-15", "amount": 1580.0, "status": "open", "paid": null },
+    { "id": "NW-5106", "customer_id": "C-100", "issued": "2026-08-12", "due": "2026-08-26", "amount": 2200.0, "status": "paid", "paid": "2026-08-24" }
+  ],
+  "reminders_sent": [
+    { "invoice_id": "NW-5101", "stage": 1, "sent": "2026-08-18" }
+  ]
+}

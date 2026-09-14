@@ -1,0 +1,11 @@
+[
+  { "id": "kb-shipping-1", "title": "Shipping terms", "text": "Standard orders ship within 3 business days of confirmation. Tracking is emailed when the carrier collects. Coastal Express delivers within 3 to 5 business days of collection in the western region." },
+  { "id": "kb-shipping-2", "title": "Shipping terms", "text": "If an order has not shipped within 3 business days, customer service confirms the new ship date with the warehouse before replying. We do not promise delivery dates the carrier has not confirmed." },
+  { "id": "kb-returns-1", "title": "Returns and refunds", "text": "Refunds and credits are approved by the operations manager. Customer service may say a refund request has been logged and will be answered within one business day, but must not promise a refund amount or timing." },
+  { "id": "kb-returns-2", "title": "Returns and refunds", "text": "Unused goods in original packaging can be returned within 30 days of delivery for a full credit. Return shipping is paid by Northwind when the error was ours." },
+  { "id": "kb-payables-1", "title": "Supplier payment policy", "text": "Supplier invoices are paid on terms when they match the purchase order and the goods receipt. Payments up to USD 2,000 run automatically; larger payments need the owner's approval." },
+  { "id": "kb-payables-2", "title": "Supplier payment policy", "text": "Preferred suppliers have a 2 percent price variance tolerance against the purchase order. Standard suppliers have none. A duplicate invoice number is always held and never paid twice." },
+  { "id": "kb-receivables-1", "title": "Receivables follow-up", "text": "Overdue customer invoices are followed up at 7, 14 and 30 days past due. Each stage is sent once. Reminders are not sent between 19:00 and 08:00." },
+  { "id": "kb-receivables-2", "title": "Receivables follow-up", "text": "Reminders under USD 2,000 go out automatically. Reminders for larger balances, and any reminder to an account marked sensitive, wait for the owner's approval. Sensitive accounts are handled personally." },
+  { "id": "kb-voice-1", "title": "Voice", "text": "Write like a person from a small company: short, warm, specific. Use the customer's name and order number. Never apologise twice. Never promise what a record does not show." }
+]

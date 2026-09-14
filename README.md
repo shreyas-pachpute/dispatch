@@ -4,7 +4,7 @@
 
 Forward Dispatch your inbox, your documents and a connection to the tools you already use. A team of specialist AI agents triages what comes in, extracts what matters, reconciles it against your records, drafts what needs a reply, chases what is overdue and reports what changed. It asks a human only when your policy says it must, shows every step it took, and proves every number back to the source document.
 
-> **Status: building in public.** Phase 0 of 6. Nothing here is a demo of a finished product yet; it is a plan being executed in the open. The plan, the architecture and the evaluation strategy are in [`docs/`](docs/). Progress is tracked in the [issues](../../issues) and the [roadmap](#roadmap).
+> **Status: v0 runs.** The Northwind morning runs end to end on your machine: eight items, all seven agents, the Reviewer, the approval matrix, the control room with live transcript, approvals, ledger and memory. Bring your own key (Anthropic, or any OpenAI-compatible endpoint such as vLLM) from the settings panel, or run the keyless mock to see the mechanics. See [Running it](#running-it). What is still a plan is in [`docs/PLAN.md`](docs/PLAN.md) and the [issues](../../issues).
 
 Built by [Shreyas Pachpute](https://shreyaspachpute.in), one person, end to end. MIT licensed.
 
@@ -121,17 +121,34 @@ Decisions and the alternatives considered: [`docs/DECISIONS.md`](docs/DECISIONS.
 
 Detailed plan with definition-of-done per phase: [`docs/PLAN.md`](docs/PLAN.md).
 
-- [ ] **Phase 0 · Foundations** — repo, compose stack, API, queue, control room shell, tracing, CI
-- [ ] **Phase 1 · Knowledge** — ingestion, chunking, hybrid retrieval with citations, retrieval evals
-- [ ] **Phase 2 · Intake** — document classification and schema extraction with source tracing, extraction evals
-- [ ] **Phase 3 · Dispatcher, context packs, memory, Reviewer, approval policy**
-- [ ] **Phase 4 · Accounts, Customer and Follow-up agents; MCP servers**
-- [ ] **Phase 5 · Analyst agent and the control room**
+- [x] **v0 · vertical slice** — every agent, the Reviewer, the policy matrix, the control room, bring-your-own-key; SQLite, lexical retrieval, recorded tool writes
+- [ ] **Phase 0 · Foundations** — compose stack, Postgres queue, tracing to Langfuse, CI
+- [ ] **Phase 1 · Knowledge** — ingestion, chunking, hybrid retrieval with pgvector, retrieval evals
+- [ ] **Phase 2 · Intake** — OCR, more document types, extraction evals
+- [ ] **Phase 3 · Dispatcher, context packs, memory, Reviewer, approval policy** — hardening and evals
+- [ ] **Phase 4 · Real MCP servers** for mail, files, sheets, CRM, accounting
+- [ ] **Phase 5 · Analyst charts, digests, the work ledger over time**
 - [ ] **Phase 6 · Hardening** — evals as CI gate, cost controls, PII redaction, vLLM path, demo recording
 
 ## Running it
 
-Not yet. Phase 0 delivers `docker compose up` and `make demo`. Until then the repo is documentation.
+Python 3.11+ and Node 20+. No database server; v0 uses SQLite in `data/runtime/`.
+
+```bash
+git clone https://github.com/shreyas-pachpute/dispatch && cd dispatch
+make install            # pip install -e apps/api · npm install in apps/control-room
+
+# terminal 1
+make api                # http://127.0.0.1:8787
+# terminal 2
+make ui                 # http://localhost:3100
+```
+
+Open the control room, press **Run the overnight inbox**, and watch the team work through the eight Northwind items. Approve or reject what waits for you; ask the Analyst a question; open any item to see the context pack, the extraction with every quote highlighted on the document, the three-way match, the Reviewer's verdict and the policy decision.
+
+**Bring your own model.** Click the model button in the header: choose Anthropic (Opus 5 for judgment, Sonnet 5 for volume, or one model for everything), or any OpenAI-compatible endpoint (OpenAI, a local vLLM, Ollama) with its base URL, paste your key, and press *Save and test*. The key stays in the API process's memory for the session; it is never written to disk. Without a key the demo runs on a deterministic mock so the mechanics are visible; the UI labels it as mock everywhere.
+
+**What v0 is and is not.** It is the real architecture at small scale: context packs, structured outputs with verbatim quotes validated against the document, a deterministic three-way match narrated by the model, a policy matrix evaluated in code, an independent Reviewer, memory written only from outcomes, a live transcript and cost per case. It is not yet Postgres, real MCP servers (the reference tools are recorded writes), OCR, or the eval suites in CI; those are the open phases in the plan.
 
 ## Contributing
 
