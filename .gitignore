@@ -32,3 +32,6 @@ Thumbs.db
 # next
 next-env.d.ts
 *.tsbuildinfo
+
+AGENTS.md
+CLAUDE.md
