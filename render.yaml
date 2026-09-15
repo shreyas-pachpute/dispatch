@@ -1,0 +1,29 @@
+# One-click deploy on Render: https://render.com/deploy?repo=https://github.com/shreyas-pachpute/dispatch
+# The API runs in mock mode until a key is set in the UI (or ANTHROPIC_API_KEY here).
+services:
+  - type: web
+    name: dispatch-api
+    runtime: docker
+    dockerfilePath: apps/api/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: PORT
+        value: 8787
+      - key: DISPATCH_DB
+        value: /tmp/dispatch.sqlite
+    healthCheckPath: /api/health
+  - type: web
+    name: dispatch-ui
+    runtime: docker
+    dockerfilePath: apps/control-room/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3100
+      - key: NEXT_PUBLIC_DISPATCH_API
+        fromService:
+          type: web
+          name: dispatch-api
+          envVarKey: RENDER_EXTERNAL_URL

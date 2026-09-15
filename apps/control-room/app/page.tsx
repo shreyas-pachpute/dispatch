@@ -2,7 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-const API = process.env.NEXT_PUBLIC_DISPATCH_API ?? "http://127.0.0.1:8787";
+// The API address: ?api=https://... in the URL (remembered), else the build-time env, else local dev.
+const API = (() => {
+  const fallback = process.env.NEXT_PUBLIC_DISPATCH_API ?? "http://127.0.0.1:8787";
+  if (typeof window === "undefined") return fallback;
+  try {
+    const q = new URLSearchParams(window.location.search).get("api");
+    if (q) localStorage.setItem("api", q);
+    return q ?? localStorage.getItem("api") ?? fallback;
+  } catch {
+    return fallback;
+  }
+})();
 
 type Item = { id: string; kind: string; sender: string; subject: string; body: string; document?: string | null; status: string };
 type Case = { id: string; item_id: string; owner_agent?: string; status: string; intent?: string; confidence?: number; reason?: string; pack?: any; result?: any; reviewer?: any[]; cost_usd: number; tokens_in: number; tokens_out: number };
