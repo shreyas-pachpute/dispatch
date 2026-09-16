@@ -1,9 +1,10 @@
 """Model gateway. Agents never import an SDK; they call `complete()` with a schema and get a validated object.
 
-Providers, chosen at runtime from the control room's settings panel (the key lives in process memory only):
+Providers, chosen per request by the caller (the UI keeps the key in the visitor's browser and sends it
+as headers; the server stores nothing):
   - anthropic: the official Anthropic SDK, adaptive thinking, structured outputs, prompt caching on the stable prefix
   - openai:    any OpenAI-compatible chat-completions endpoint (OpenAI, vLLM, Ollama, ...) with JSON-schema output
-  - mock:      deterministic outputs derived from the input (see mock.py), so the demo and the tests run without a key
+  - mock:      deterministic outputs derived from the input (see mock.py), so the demo runs without a key
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, TypeVar
 
 import httpx
@@ -21,7 +22,7 @@ from .store import Store
 
 T = TypeVar("T", bound=BaseModel)
 
-# USD per million tokens (input, output, cache read), first-party API rates; other providers are reported as 0 unless set
+# USD per million tokens (input, output, cache read), first-party API rates
 PRICES = {
     "claude-opus-5": (5.0, 25.0, 0.5),
     "claude-sonnet-5": (2.0, 10.0, 0.2),
@@ -38,6 +39,17 @@ ROLE_MODEL = {
     "analyst": ("claude-opus-5", "medium"),
     "analyst_answer": ("claude-sonnet-5", "low"),
     "reviewer": ("claude-opus-5", "high"),
+    "chair": ("claude-opus-5", "high"),
+    "researcher": ("claude-sonnet-5", "medium"),
+    "scoper": ("claude-sonnet-5", "medium"),
+    "estimator": ("claude-sonnet-5", "medium"),
+    "sub_estimator": ("claude-sonnet-5", "low"),
+    "pricer": ("claude-opus-5", "medium"),
+    "risk": ("claude-opus-5", "medium"),
+    "writer": ("claude-sonnet-5", "medium"),
+    "critic": ("claude-opus-5", "high"),
+    "arbiter": ("claude-opus-5", "high"),
+    "defence": ("claude-sonnet-5", "medium"),
 }
 
 ANTHROPIC_MODELS = ["auto", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]
@@ -49,7 +61,6 @@ class Settings:
     model: str = "auto"
     base_url: str = "https://api.openai.com/v1"
     api_key: str = ""
-    extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -59,15 +70,23 @@ class Settings:
             return cls(provider="openai", model=os.environ.get("OPENAI_MODEL", "gpt-4o"), base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"), api_key=os.environ["OPENAI_API_KEY"])
         return cls()
 
-    def public(self) -> dict[str, Any]:
-        return {
-            "provider": self.provider,
-            "model": self.model,
-            "base_url": self.base_url,
-            "has_key": bool(self.api_key),
-            "key_hint": (self.api_key[:6] + "…" + self.api_key[-3:]) if len(self.api_key) > 12 else ("set" if self.api_key else ""),
-            "anthropic_models": ANTHROPIC_MODELS,
-        }
+    @classmethod
+    def from_headers(cls, headers: Any) -> "Settings":
+        """X-Model-Provider / X-Model-Name / X-Model-Base-Url / X-Model-Key. Falls back to the environment, then mock."""
+        provider = (headers.get("x-model-provider") or "").strip().lower()
+        if provider not in ("anthropic", "openai", "mock"):
+            return cls.from_env()
+        s = cls(provider=provider)
+        s.model = (headers.get("x-model-name") or ("auto" if provider == "anthropic" else "gpt-4o")).strip()
+        if provider == "anthropic" and s.model not in ANTHROPIC_MODELS:
+            s.model = "auto"
+        s.base_url = (headers.get("x-model-base-url") or "https://api.openai.com/v1").strip()
+        s.api_key = (headers.get("x-model-key") or "").strip()
+        if provider != "mock" and not s.api_key:
+            env = cls.from_env()
+            if env.provider == provider:
+                s.api_key = env.api_key
+        return s
 
     @property
     def label(self) -> str:
@@ -79,28 +98,21 @@ class Settings:
 
 
 class Gateway:
-    def __init__(self, store: Store, settings: Settings | None = None):
+    def __init__(self, store: Store, settings: Settings):
         self.store = store
-        self.settings = settings or Settings.from_env()
+        self.settings = settings
+        self.current: dict[str, str] = {"meeting": "", "turn": ""}
         self._anthropic = None
-        self._anthropic_key = None
-
-    def configure(self, **kw: Any) -> Settings:
-        for k, v in kw.items():
-            if v is not None and hasattr(self.settings, k):
-                setattr(self.settings, k, v)
-        if self.settings.provider == "anthropic" and self.settings.model not in ANTHROPIC_MODELS:
-            self.settings.model = "auto"
-        return self.settings
 
     async def check(self) -> dict[str, Any]:
         """A one-line health check the settings panel can run before a demo."""
-        from pydantic import BaseModel as _B
 
-        class Ping(_B):
+        class Ping(BaseModel):
             ok: bool
             model_name: str
 
+        if self.settings.provider == "mock":
+            return {"ok": True, "detail": "Mock provider: deterministic answers, no key needed. Pick Anthropic or an OpenAI-compatible endpoint to use a real model."}
         try:
             out = await self.complete(role="dispatcher", schema=Ping, system="Reply with ok=true and the name you are known as.", user="ping", case_id="settings-check")
             return {"ok": True, "detail": f"{self.settings.label} answered: {out.model_name}"}
@@ -110,10 +122,22 @@ class Gateway:
     def _client(self):
         import anthropic
 
-        if self._anthropic is None or self._anthropic_key != self.settings.api_key:
+        if self._anthropic is None:
             self._anthropic = anthropic.AsyncAnthropic(api_key=self.settings.api_key or None)
-            self._anthropic_key = self.settings.api_key
         return self._anthropic
+
+    def _record(self, case_id: str, role: str, model: str, tin: int, tout: int, cached: int, cost: float, t0: float) -> None:
+        ms = int((time.time() - t0) * 1000)
+        rec = getattr(self.store, "record_call", None)
+        if rec is None:
+            return
+        try:
+            if self.current.get("turn"):
+                rec(self.current["meeting"], self.current["turn"], role, model, tin, tout, cached, cost, ms)  # roundtable signature
+            else:
+                rec(case_id, role, model, tin, tout, cached, cost, ms)  # dispatch signature
+        except TypeError:
+            rec(case_id, role, model, tin, tout, cached, cost, ms)
 
     async def complete(self, *, role: str, schema: type[T], system: str, user: str, case_id: str, context: dict[str, Any] | None = None) -> T:
         t0 = time.time()
@@ -122,7 +146,7 @@ class Gateway:
             from . import mock
 
             out = mock.respond(role, schema, context or {})
-            self.store.record_call(case_id, role, "mock", 0, 0, 0, 0.0, int((time.time() - t0) * 1000))
+            self._record(case_id, role, "mock", 0, 0, 0, 0.0, t0)
             return out
         if s.provider == "anthropic":
             return await self._anthropic_complete(role, schema, system, user, case_id, t0)
@@ -150,7 +174,7 @@ class Gateway:
         p_in, p_out, p_cache = PRICES.get(model, (5.0, 25.0, 0.5))
         cached = getattr(u, "cache_read_input_tokens", 0) or 0
         cost = (u.input_tokens * p_in + u.output_tokens * p_out + cached * p_cache) / 1e6
-        self.store.record_call(case_id, role, model, u.input_tokens, u.output_tokens, cached, cost, int((time.time() - t0) * 1000))
+        self._record(case_id, role, model, u.input_tokens, u.output_tokens, cached, cost, t0)
         if response.stop_reason == "refusal":
             raise RuntimeError(f"model refused: {getattr(response, 'stop_details', None)}")
         if response.parsed_output is None:
@@ -178,11 +202,10 @@ class Gateway:
                 r = await http.post(s.base_url.rstrip("/") + "/chat/completions", json=body, headers=headers)
             r.raise_for_status()
             data = r.json()
-        text = data["choices"][0]["message"]["content"]
-        text = text.strip()
+        text = data["choices"][0]["message"]["content"].strip()
         if text.startswith("```"):
             text = text.strip("`")
             text = text[text.find("{") :]
         usage = data.get("usage", {})
-        self.store.record_call(case_id, role, model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), 0, 0.0, int((time.time() - t0) * 1000))
+        self._record(case_id, role, model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), 0, 0.0, t0)
         return schema.model_validate_json(text[text.find("{") : text.rfind("}") + 1])

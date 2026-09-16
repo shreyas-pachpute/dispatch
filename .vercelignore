@@ -1,0 +1,4 @@
+apps/control-room
+docs
+data/runtime
+.env*

@@ -15,60 +15,126 @@ const API = (() => {
   }
 })();
 
+type ModelSettings = { provider: string; model: string; base_url: string; api_key: string };
+const DEFAULT_SETTINGS: ModelSettings = { provider: "mock", model: "auto", base_url: "https://api.openai.com/v1", api_key: "" };
+let modelSettings: ModelSettings = DEFAULT_SETTINGS;
+function loadSettings(): ModelSettings {
+  try {
+    const raw = localStorage.getItem("model-settings");
+    if (raw) modelSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch {}
+  return modelSettings;
+}
+function saveSettings(s: ModelSettings) {
+  modelSettings = s;
+  try {
+    localStorage.setItem("model-settings", JSON.stringify(s));
+  } catch {}
+}
+
 type Item = { id: string; kind: string; sender: string; subject: string; body: string; document?: string | null; status: string };
 type Case = { id: string; item_id: string; owner_agent?: string; status: string; intent?: string; confidence?: number; reason?: string; pack?: any; result?: any; reviewer?: any[]; cost_usd: number; tokens_in: number; tokens_out: number };
 type Action = { id: string; case_id: string; type: string; payload: any; amount?: number; counterparty?: string; policy_decision?: string; status: string; reviewer_verdict?: any; result?: any };
 type Ev = { id: number; ts: number; case_id?: string; agent: string; kind: string; message: string };
 type State = {
   items: Item[]; cases: Case[]; actions: Action[]; approvals: any[]; memories: any[]; calls: any[];
-  worker: { running: boolean }; model: string; last_event_id: number;
+  worker: { queued: number; working: number }; db: string; last_event_id: number;
   ledger: { handled: number; by_kind: Record<string, number>; awaiting_approval: number; executed: number; blocked: number; escalated: number; estimated_minutes: number; cost_usd: number; tokens: number };
 };
-type Settings = { provider: string; model: string; base_url: string; has_key: boolean; key_hint: string; anthropic_models: string[] };
+type ServerSettings = { anthropic_models: string[]; server_default: string; label: string };
 
 const KIND: Record<string, string> = { supplier_invoice: "Supplier invoice", customer_email: "Customer email", scheduled: "Scheduled", question: "Question" };
 const AGENT: Record<string, string> = { intake: "Intake → Accounts", customer: "Customer", followup: "Follow-up", analyst: "Analyst", escalate: "Escalated" };
 
 async function api(path: string, init?: RequestInit) {
-  const r = await fetch(API + path, { ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } });
+  const s = modelSettings;
+  const headers: Record<string, string> = { "content-type": "application/json", "x-model-provider": s.provider, "x-model-name": s.model, "x-model-base-url": s.base_url };
+  if (s.api_key) headers["x-model-key"] = s.api_key;
+  const r = await fetch(API + path, { ...init, headers: { ...headers, ...(init?.headers as Record<string, string> | undefined) } });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
+}
+
+function modelLabel(s: ModelSettings) {
+  if (s.provider === "anthropic") return `Anthropic · ${s.model === "auto" ? "Opus 5 + Sonnet 5" : s.model}`;
+  if (s.provider === "openai") {
+    try {
+      return `${s.model} @ ${new URL(s.base_url).host}`;
+    } catch {
+      return s.model;
+    }
+  }
+  return "Mock · no key";
 }
 
 export default function ControlRoom() {
   const [state, setState] = useState<State | null>(null);
   const [events, setEvents] = useState<Ev[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const [settings, setSettings] = useState<ModelSettings>(DEFAULT_SETTINGS);
+  const [server, setServer] = useState<ServerSettings | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [offline, setOffline] = useState(false);
+  const [working, setWorking] = useState(false);
   const lastEvent = useRef(0);
+  const ticking = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
       const s = await api("/api/state");
       setState(s);
       setOffline(false);
+      return s as State;
     } catch {
       setOffline(true);
+      return null;
     }
   }, []);
 
-  useEffect(() => {
-    refresh();
-    api("/api/settings").then(setSettings).catch(() => {});
-    const es = new EventSource(`${API}/api/events?after=0`);
-    let t: ReturnType<typeof setTimeout> | null = null;
-    es.addEventListener("log", (e) => {
-      const ev = JSON.parse((e as MessageEvent).data) as Ev;
-      lastEvent.current = ev.id;
-      setEvents((prev) => (prev.some((p) => p.id === ev.id) ? prev : [...prev.slice(-400), ev]));
-      if (!t) t = setTimeout(() => { t = null; refresh(); }, 250);
-    });
-    es.onerror = () => setOffline(true);
-    const poll = setInterval(refresh, 4000);
-    return () => { es.close(); clearInterval(poll); };
+  const pollEvents = useCallback(async () => {
+    try {
+      const r = await api(`/api/events?after=${lastEvent.current}`);
+      if (r.events?.length) {
+        lastEvent.current = r.last_id;
+        setEvents((prev) => [...prev, ...r.events].slice(-500));
+        refresh();
+      }
+    } catch {}
   }, [refresh]);
+
+  // the UI is the worker's clock: keep calling tick while items are queued
+  const drive = useCallback(async () => {
+    if (ticking.current) return;
+    ticking.current = true;
+    setWorking(true);
+    try {
+      for (let i = 0; i < 40; i++) {
+        const r = await api("/api/worker/tick", { method: "POST" });
+        await pollEvents();
+        if (!r.remaining) break;
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      ticking.current = false;
+      setWorking(false);
+      refresh();
+    }
+  }, [pollEvents, refresh]);
+
+  useEffect(() => {
+    setSettings(loadSettings());
+    api("/api/settings").then(setServer).catch(() => {});
+    refresh().then((s) => {
+      if (s && s.worker.queued > 0) drive();
+    });
+    const t1 = setInterval(pollEvents, 1000);
+    const t2 = setInterval(refresh, 4000);
+    return () => {
+      clearInterval(t1);
+      clearInterval(t2);
+    };
+  }, [refresh, pollEvents, drive]);
 
   const cases = state?.cases ?? [];
   const byItem = useMemo(() => Object.fromEntries(cases.map((c) => [c.item_id, c])), [cases]);
@@ -82,9 +148,22 @@ export default function ControlRoom() {
     if (!selected && state?.items.length) setSelected(state.items[0].id);
   }, [state, selected]);
 
-  const run = async () => { await api("/api/demo/run", { method: "POST" }); refresh(); };
-  const reset = async () => { await api("/api/demo/reset", { method: "POST" }); setEvents([]); setSelected(null); refresh(); };
-  const decide = async (id: string, decision: "approve" | "reject") => { await api(`/api/actions/${id}/decide`, { method: "POST", body: JSON.stringify({ decision }) }); refresh(); };
+  const run = async () => {
+    await api("/api/demo/run", { method: "POST" });
+    await refresh();
+    drive();
+  };
+  const reset = async () => {
+    await api("/api/demo/reset", { method: "POST" });
+    setEvents([]);
+    lastEvent.current = 0;
+    setSelected(null);
+    refresh();
+  };
+  const decide = async (id: string, decision: "approve" | "reject") => {
+    await api(`/api/actions/${id}/decide`, { method: "POST", body: JSON.stringify({ decision }) });
+    refresh();
+  };
 
   return (
     <>
@@ -94,18 +173,18 @@ export default function ControlRoom() {
           <span className="mono dim">control room · Northwind Supplies</span>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span className={`badge ${state?.worker.running ? "accent" : ""}`}>
-            <span className={`dot ${state?.worker.running ? "pulse" : ""}`} /> {state?.worker.running ? "team working" : offline ? "api offline" : "idle"}
+          <span className={`badge ${working ? "accent" : ""}`}>
+            <span className={`dot ${working ? "pulse" : ""}`} /> {working ? "team working" : offline ? "api offline" : "idle"}
           </span>
-          <button className="btn sm" onClick={() => setShowSettings((s) => !s)} title={state?.model}>
-            {settings ? modelLabel(settings) : "model"}
+          <button className="btn sm" onClick={() => setShowSettings((s) => !s)} title={state?.db}>
+            {modelLabel(settings)}
           </button>
-          <button className="btn sm" onClick={reset} disabled={state?.worker.running}>Reset</button>
-          <button className="btn primary sm" onClick={run} disabled={state?.worker.running}>Run the overnight inbox →</button>
+          <button className="btn sm" onClick={reset} disabled={working}>Reset</button>
+          <button className="btn primary sm" onClick={run} disabled={working}>Run the overnight inbox →</button>
         </div>
       </header>
 
-      {showSettings && settings ? <SettingsPanel settings={settings} onChange={(s) => { setSettings(s); refresh(); }} onClose={() => setShowSettings(false)} /> : null}
+      {showSettings ? <SettingsPanel settings={settings} server={server} onChange={(s) => { setSettings(s); saveSettings(s); refresh(); }} onClose={() => setShowSettings(false)} /> : null}
 
       <main className="grid">
         <section className="col">
@@ -167,10 +246,11 @@ export default function ControlRoom() {
                 <div className="stat"><span className="v">${state.ledger.cost_usd.toFixed(2)}</span><span className="l">model spend · {state.ledger.tokens.toLocaleString()} tokens</span></div>
               </div>
             ) : null}
+            {state?.db ? <div className="note" style={{ marginTop: 8 }}>Store: {state.db}</div> : null}
           </div>
           <div className="card">
             <h2>Ask the Analyst</h2>
-            <Ask onAsk={async (q) => { const r = await api("/api/ask", { method: "POST", body: JSON.stringify({ question: q }) }); setSelected(r.item_id); refresh(); }} />
+            <Ask onAsk={async (q) => { const r = await api("/api/ask", { method: "POST", body: JSON.stringify({ question: q }) }); setSelected(r.item_id); await refresh(); drive(); }} />
             <div className="note" style={{ marginTop: 8 }}>Read-only SQL over the operational store. The query is shown with the answer.</div>
           </div>
           <div className="card">
@@ -187,12 +267,6 @@ export default function ControlRoom() {
       </main>
     </>
   );
-}
-
-function modelLabel(s: Settings) {
-  if (s.provider === "anthropic") return `Anthropic · ${s.model === "auto" ? "Opus 5 + Sonnet 5" : s.model}`;
-  if (s.provider === "openai") return `${s.model} @ ${new URL(s.base_url).host}`;
-  return "Mock · no key";
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -393,19 +467,20 @@ function Ask({ onAsk }: { onAsk: (q: string) => Promise<void> }) {
   );
 }
 
-function SettingsPanel({ settings, onChange, onClose }: { settings: Settings; onChange: (s: Settings) => void; onClose: () => void }) {
+export function SettingsPanel({ settings, server, onChange, onClose, judgmentNote }: { settings: ModelSettings; server: ServerSettings | null; onChange: (s: ModelSettings) => void; onClose: () => void; judgmentNote?: string }) {
   const [provider, setProvider] = useState(settings.provider);
   const [model, setModel] = useState(settings.model);
   const [baseUrl, setBaseUrl] = useState(settings.base_url);
-  const [key, setKey] = useState("");
+  const [key, setKey] = useState(settings.api_key);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const models = server?.anthropic_models ?? ["auto", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"];
   const save = async () => {
     setBusy(true);
+    const next: ModelSettings = { provider, model: provider === "anthropic" && !models.includes(model) ? "auto" : model, base_url: baseUrl, api_key: provider === "mock" ? "" : key };
+    onChange(next);
     try {
-      const s = await api("/api/settings", { method: "POST", body: JSON.stringify({ provider, model: provider === "anthropic" && !settings.anthropic_models.includes(model) ? "auto" : model, base_url: baseUrl, api_key: key || undefined }) });
-      onChange(s);
-      setStatus("Saved. Checking…");
+      setStatus("Saved in this browser. Checking…");
       const c = await api("/api/settings/check", { method: "POST" });
       setStatus((c.ok ? "✓ " : "✗ ") + c.detail);
     } catch (e: any) {
@@ -432,7 +507,7 @@ function SettingsPanel({ settings, onChange, onClose }: { settings: Settings; on
         <div className="field">
           <label>Model</label>
           <select value={model} onChange={(e) => setModel(e.target.value)}>
-            {settings.anthropic_models.map((m) => <option key={m} value={m}>{m === "auto" ? "auto · Opus 5 for judgment, Sonnet 5 for volume" : m}</option>)}
+            {models.map((m) => <option key={m} value={m}>{m === "auto" ? (judgmentNote ?? "auto · Opus 5 for judgment, Sonnet 5 for volume") : m}</option>)}
           </select>
         </div>
       ) : null}
@@ -444,13 +519,13 @@ function SettingsPanel({ settings, onChange, onClose }: { settings: Settings; on
       ) : null}
       {provider !== "mock" ? (
         <div className="field">
-          <label>API key {settings.has_key ? `(current: ${settings.key_hint})` : ""}</label>
-          <input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={settings.has_key ? "leave blank to keep the current key" : "paste your key"} />
+          <label>API key</label>
+          <input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="paste your key" autoComplete="off" />
         </div>
       ) : null}
       <div style={{ gridColumn: "1 / -1", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <button className="btn primary sm" onClick={save} disabled={busy}>Save and test</button>
-        <span className="note">{status ?? "The key stays in the local server's memory for this session. It is never written to disk or sent anywhere but the provider you chose."}</span>
+        <span className="note">{status ?? "Your key stays in this browser and is sent only with your own requests, straight to the provider you chose. The server never stores it."}</span>
       </div>
     </div>
   );

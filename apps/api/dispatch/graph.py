@@ -82,8 +82,8 @@ async def run_item(rt: Runtime, graph, item: dict[str, Any]) -> str:
     rt.store.open_case(case_id, item["id"])
     try:
         await graph.ainvoke({"case_id": case_id, "item": item})
-        pending = rt.store.q("SELECT 1 FROM actions WHERE case_id=? AND status='awaiting_approval'", (case_id,))
-        escalated = rt.store.q("SELECT 1 FROM actions WHERE case_id=? AND type='escalate'", (case_id,))
+        pending = rt.store.q("SELECT 1 FROM actions WHERE case_id=%s AND status='awaiting_approval'", (case_id,))
+        escalated = rt.store.q("SELECT 1 FROM actions WHERE case_id=%s AND type='escalate'", (case_id,))
         status = "escalated" if escalated else ("awaiting_approval" if pending else "closed")
         rt.store.close_case(case_id, status)
         if status == "closed":
@@ -96,7 +96,7 @@ async def run_item(rt: Runtime, graph, item: dict[str, Any]) -> str:
 
 def _remember(rt: Runtime, case_id: str, item: dict[str, Any]) -> None:
     """Memory is written from outcomes only: an executed, unreverted action or a human decision."""
-    acts = rt.store.q("SELECT type, policy_decision FROM actions WHERE case_id=? AND status='executed'", (case_id,))
+    acts = rt.store.q("SELECT type, policy_decision FROM actions WHERE case_id=%s AND status='executed'", (case_id,))
     if not acts:
         return
     summary = f"{item['kind']} “{item['subject']}” → " + ", ".join(f"{a['type']} ({a['policy_decision']})" for a in acts)

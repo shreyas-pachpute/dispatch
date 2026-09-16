@@ -57,18 +57,18 @@ def three_way_match(store: Store, ex: S.InvoiceExtraction) -> dict[str, Any]:
     inv_no = ex.invoice_number.value
     po_id = ex.po_number.value
     dup = store.one(
-        "SELECT c.id FROM cases c JOIN actions a ON a.case_id=c.id WHERE a.type IN ('queue_payment','hold_invoice','supplier_query') AND a.payload LIKE ? LIMIT 1",
+        "SELECT c.id FROM cases c JOIN actions a ON a.case_id=c.id WHERE a.type IN ('queue_payment','hold_invoice','supplier_query') AND a.payload LIKE %s LIMIT 1",
         (f'%"invoice_number": "{inv_no}"%',),
     )
     if dup:
         return {"verdict": "duplicate", "invoice_number": inv_no, "po_id": po_id, "differences": [f"invoice {inv_no} already processed in case {dup['id']}"], "total": float(ex.total.value or 0)}
-    po = store.one("SELECT * FROM purchase_orders WHERE id=?", (po_id,))
+    po = store.one("SELECT * FROM purchase_orders WHERE id=%s", (po_id,))
     if not po:
         return {"verdict": "unmatched", "invoice_number": inv_no, "po_id": po_id, "differences": [f"no purchase order {po_id}"], "total": float(ex.total.value or 0)}
     po_lines = json.loads(po["lines"])
-    rcpt = store.one("SELECT * FROM receipts WHERE po_id=?", (po_id,))
+    rcpt = store.one("SELECT * FROM receipts WHERE po_id=%s", (po_id,))
     rcpt_lines = json.loads(rcpt["lines"]) if rcpt else []
-    supplier = store.one("SELECT * FROM suppliers WHERE id=?", (po["supplier_id"],)) or {}
+    supplier = store.one("SELECT * FROM suppliers WHERE id=%s", (po["supplier_id"],)) or {}
     tol = float(supplier.get("variance_tolerance") or 0)
     diffs: list[str] = []
     for line in ex.lines:
@@ -216,7 +216,7 @@ SCHEMA_CARD = """tables:
   purchase_orders(id TEXT, supplier_id TEXT, issued TEXT, lines TEXT(json), total REAL)
   invoices_out(id TEXT, customer_id TEXT, issued TEXT, due TEXT, amount REAL, status TEXT('open'|'paid'), paid TEXT)
   reminders_sent(invoice_id TEXT, stage INTEGER, sent TEXT)
-notes: dates are ISO 'YYYY-MM-DD' strings; amounts are USD."""
+notes: dates are ISO 'YYYY-MM-DD' strings; amounts are USD. Write portable SQL that runs on both PostgreSQL and SQLite: for ROUND use ROUND(CAST(x AS NUMERIC), 2); no dialect-specific functions."""
 
 
 async def analyst(rt: Runtime, case_id: str, item: dict[str, Any]) -> dict[str, Any]:
@@ -244,8 +244,8 @@ async def analyst(rt: Runtime, case_id: str, item: dict[str, Any]) -> dict[str, 
 
 async def reviewer(rt: Runtime, case_id: str, item: dict[str, Any]) -> list[dict[str, Any]]:
     """Independent check of every outbound action before policy sees it."""
-    actions = rt.store.q("SELECT * FROM actions WHERE case_id=? AND status='proposed'", (case_id,))
-    case = rt.store.one("SELECT * FROM cases WHERE id=?", (case_id,)) or {}
+    actions = rt.store.q("SELECT * FROM actions WHERE case_id=%s AND status='proposed'", (case_id,))
+    case = rt.store.one("SELECT * FROM cases WHERE id=%s", (case_id,)) or {}
     result = json.loads(case["result"]) if case.get("result") else {}
     injection = bool(result.get("reply", {}).get("injection_suspected"))
     verdicts = []
@@ -270,7 +270,7 @@ async def reviewer(rt: Runtime, case_id: str, item: dict[str, Any]) -> list[dict
 
 def apply_policy(rt: Runtime, case_id: str) -> None:
     """Auto / notify / approve for what the Reviewer let through. Executes auto and notify through the (mock) MCP tools."""
-    for a in rt.store.q("SELECT * FROM actions WHERE case_id=? AND status='proposed'", (case_id,)):
+    for a in rt.store.q("SELECT * FROM actions WHERE case_id=%s AND status='proposed'", (case_id,)):
         payload = json.loads(a["payload"])
         flags = {"sensitive": payload.get("sensitive"), "intent": payload.get("intent")}
         decision, rule = rt.policy.decide(a["type"], a["amount"], flags)
@@ -290,7 +290,7 @@ def execute(rt: Runtime, action: dict[str, Any], payload: dict[str, Any]) -> Non
     t = action["type"]
     result: dict[str, Any]
     if t == "schedule_reminder":
-        rt.store.x("INSERT INTO reminders_sent (invoice_id, stage, sent) VALUES (?,?,?)", (payload["invoice_number"], payload["stage"], TODAY.isoformat()))
+        rt.store.x("INSERT INTO reminders_sent (invoice_id, stage, sent) VALUES (%s,%s,%s)", (payload["invoice_number"], payload["stage"], TODAY.isoformat()))
         result = {"tool": "mcp-mail.schedule_email", "to": payload["to"], "when": "next send window (08:00)"}
     elif t == "customer_reply":
         result = {"tool": "mcp-mail.send_email", "to": payload["to"], "subject": payload["subject"]}

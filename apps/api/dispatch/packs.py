@@ -39,7 +39,7 @@ ROLES = {
         "invoice number, the amount and the due date exactly as given. No threats, no apology."
     ),
     "analyst": (
-        "You are the Analyst. Given a SQLite schema card and a question, write ONE read-only SELECT statement that answers it. Use only the "
+        "You are the Analyst. Given a schema card and a question, write ONE read-only, portable SELECT statement (PostgreSQL and SQLite compatible) that answers it. Use only the "
         "tables and columns listed. Dates are ISO strings. Do not write anything but the query and a one-sentence explanation."
     ),
     "analyst_answer": (
@@ -73,31 +73,31 @@ class PackBuilder:
         text = f"{item.get('subject','')}\n{item.get('body','')}\n{item.get('document') or ''}"
         rec: dict[str, Any] = {}
         sender = item.get("sender", "")
-        cust = self.store.one("SELECT * FROM customers WHERE email=?", (sender,))
-        supp = self.store.one("SELECT * FROM suppliers WHERE email=?", (sender,))
+        cust = self.store.one("SELECT * FROM customers WHERE email=%s", (sender,))
+        supp = self.store.one("SELECT * FROM suppliers WHERE email=%s", (sender,))
         if cust:
             rec["customer"] = cust
-            rec["orders"] = self.store.q("SELECT * FROM orders WHERE customer_id=?", (cust["id"],))
+            rec["orders"] = self.store.q("SELECT * FROM orders WHERE customer_id=%s", (cust["id"],))
             rec["shipments"] = self.store.q(
-                "SELECT s.* FROM shipments s JOIN orders o ON o.id=s.order_id WHERE o.customer_id=?", (cust["id"],)
+                "SELECT s.* FROM shipments s JOIN orders o ON o.id=s.order_id WHERE o.customer_id=%s", (cust["id"],)
             )
-            rec["open_invoices"] = self.store.q("SELECT * FROM invoices_out WHERE customer_id=? AND status='open'", (cust["id"],))
+            rec["open_invoices"] = self.store.q("SELECT * FROM invoices_out WHERE customer_id=%s AND status='open'", (cust["id"],))
         if supp:
             rec["supplier"] = supp
         for po in sorted(set(re.findall(r"PO-\d{4}", text))):
-            p = self.store.one("SELECT * FROM purchase_orders WHERE id=?", (po,))
+            p = self.store.one("SELECT * FROM purchase_orders WHERE id=%s", (po,))
             if p:
                 p["lines"] = json.loads(p["lines"])
                 rec.setdefault("purchase_orders", []).append(p)
-                r = self.store.one("SELECT * FROM receipts WHERE po_id=?", (po,))
+                r = self.store.one("SELECT * FROM receipts WHERE po_id=%s", (po,))
                 if r:
                     r["lines"] = json.loads(r["lines"])
                     rec.setdefault("receipts", []).append(r)
         for oid in sorted(set(re.findall(r"#?\b(48\d{2})\b", text))):
-            o = self.store.one("SELECT * FROM orders WHERE id=?", (oid,))
+            o = self.store.one("SELECT * FROM orders WHERE id=%s", (oid,))
             if o and o not in rec.get("orders", []):
                 rec.setdefault("orders", []).append(o)
-                s = self.store.one("SELECT * FROM shipments WHERE order_id=?", (oid,))
+                s = self.store.one("SELECT * FROM shipments WHERE order_id=%s", (oid,))
                 if s and s not in rec.get("shipments", []):
                     rec.setdefault("shipments", []).append(s)
         return rec

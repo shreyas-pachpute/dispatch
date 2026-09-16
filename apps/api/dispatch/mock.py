@@ -90,7 +90,7 @@ def respond(role: str, schema: type[BaseModel], ctx: dict[str, Any]) -> Any:
 
     if schema is S.AnalystQuery:
         return S.AnalystQuery(
-            sql="SELECT c.name AS customer, ROUND(SUM(i.amount),2) AS invoiced, SUM(CASE WHEN i.status='open' THEN 1 ELSE 0 END) AS open_invoices, ROUND(SUM(CASE WHEN i.status='open' THEN i.amount ELSE 0 END),2) AS open_amount FROM invoices_out i JOIN customers c ON c.id=i.customer_id WHERE i.issued BETWEEN '2026-08-01' AND '2026-08-31' GROUP BY c.name ORDER BY invoiced DESC",
+            sql="SELECT c.name AS customer, ROUND(CAST(SUM(i.amount) AS NUMERIC),2) AS invoiced, SUM(CASE WHEN i.status='open' THEN 1 ELSE 0 END) AS open_invoices, ROUND(CAST(SUM(CASE WHEN i.status='open' THEN i.amount ELSE 0 END) AS NUMERIC),2) AS open_amount FROM invoices_out i JOIN customers c ON c.id=i.customer_id WHERE i.issued BETWEEN '2026-08-01' AND '2026-08-31' GROUP BY c.name ORDER BY invoiced DESC",
             explanation="Sums August invoices per customer and counts how many are still open.",
         )
 
