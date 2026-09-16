@@ -4,7 +4,7 @@
 
 Forward Dispatch your inbox, your documents and a connection to the tools you already use. A team of specialist AI agents triages what comes in, extracts what matters, reconciles it against your records, drafts what needs a reply, chases what is overdue and reports what changed. It asks a human only when your policy says it must, shows every step it took, and proves every number back to the source document.
 
-> **Status: v0 runs.** The Northwind morning runs end to end on your machine: eight items, all seven agents, the Reviewer, the approval matrix, the control room with live transcript, approvals, ledger and memory. Bring your own key (Anthropic, or any OpenAI-compatible endpoint such as vLLM) from the settings panel, or run the keyless mock to see the mechanics. See [Running it](#running-it). What is still a plan is in [`docs/PLAN.md`](docs/PLAN.md) and the [issues](../../issues).
+> **Status: v0 runs.** **Try it at [dispatch.shreyaspachpute.in](https://dispatch.shreyaspachpute.in)**, no key needed. The Northwind morning runs end to end: eight items, all seven agents, the Reviewer, the approval matrix, the control room with live transcript, approvals, ledger and memory. Bring your own key (Anthropic, or any OpenAI-compatible endpoint such as vLLM) from the settings panel, or run the keyless mock to see the mechanics. See [Running it](#running-it). What is still a plan is in [`docs/PLAN.md`](docs/PLAN.md) and the [issues](../../issues).
 
 Built by [Shreyas Pachpute](https://shreyaspachpute.in), one person, end to end. MIT licensed.
 
@@ -132,7 +132,7 @@ Detailed plan with definition-of-done per phase: [`docs/PLAN.md`](docs/PLAN.md).
 
 ## Running it
 
-Python 3.11+ and Node 20+. No database server; v0 uses SQLite in `data/runtime/`.
+Python 3.12+ and Node 20+. Without `DATABASE_URL` the API uses SQLite in `data/runtime/`; with a Postgres `DATABASE_URL` (Neon, Supabase, local) it uses Postgres, which is what production runs on.
 
 ```bash
 git clone https://github.com/shreyas-pachpute/dispatch && cd dispatch
@@ -146,11 +146,11 @@ make ui                 # http://localhost:3100
 
 Open the control room, press **Run the overnight inbox**, and watch the team work through the eight Northwind items. Approve or reject what waits for you; ask the Analyst a question; open any item to see the context pack, the extraction with every quote highlighted on the document, the three-way match, the Reviewer's verdict and the policy decision.
 
-**Hosting it.** The UI is a static Next.js app and runs anywhere (Vercel works). The API needs an always-on server because it keeps a live queue and event stream; `render.yaml` deploys both API and UI on Render's free tier in one click: [Deploy to Render](https://render.com/deploy?repo=https://github.com/shreyas-pachpute/dispatch). A hosted UI can point at any API with `?api=https://your-api-host` in the address bar (remembered in the browser).
+**Hosting it.** Production runs on Vercel: the API is a Python function (FastAPI, entrypoint `app.py`, config in `vercel.json`) and the UI a Next.js app built from `apps/control-room`; both deploy from this repository through the Vercel Git integration, the UI project with its root directory set to `apps/control-room`. State lives in Postgres (Neon through the Vercel marketplace) via `DATABASE_URL`; the UI finds the API through `NEXT_PUBLIC_DISPATCH_API`. The API is stateless between requests: every action is one HTTP call that reads and writes the database, so it fits a serverless runtime and a page refresh loses nothing. A hosted UI can point at any API with `?api=https://your-api-host` in the address bar (remembered in the browser). `render.yaml` is kept for anyone who prefers a long-running server.
 
-**Bring your own model.** Click the model button in the header: choose Anthropic (Opus 5 for judgment, Sonnet 5 for volume, or one model for everything), or any OpenAI-compatible endpoint (OpenAI, a local vLLM, Ollama) with its base URL, paste your key, and press *Save and test*. The key stays in the API process's memory for the session; it is never written to disk. Without a key the demo runs on a deterministic mock so the mechanics are visible; the UI labels it as mock everywhere.
+**Bring your own model.** Click the model button in the header: choose Anthropic (Opus 5 for judgment, Sonnet 5 for volume, or one model for everything), or any OpenAI-compatible endpoint (OpenAI, a local vLLM, Ollama) with its base URL, paste your key, and press *Save and test*. The key stays in your browser (localStorage) and travels only as request headers to the API for each call; the server never stores it. Without a key the demo runs on a deterministic mock so the mechanics are visible; the UI labels it as mock everywhere.
 
-**What v0 is and is not.** It is the real architecture at small scale: context packs, structured outputs with verbatim quotes validated against the document, a deterministic three-way match narrated by the model, a policy matrix evaluated in code, an independent Reviewer, memory written only from outcomes, a live transcript and cost per case. It is not yet Postgres, real MCP servers (the reference tools are recorded writes), OCR, or the eval suites in CI; those are the open phases in the plan.
+**What v0 is and is not.** It is the real architecture at small scale: context packs, structured outputs with verbatim quotes validated against the document, a deterministic three-way match narrated by the model, a policy matrix evaluated in code, an independent Reviewer, memory written only from outcomes, a live transcript and cost per case. It is not yet real MCP servers (the reference tools are recorded writes), OCR, or the eval suites in CI; those are the open phases in the plan.
 
 ## Contributing
 
