@@ -19,16 +19,23 @@ class DB:
     def __init__(self, url: str | None, sqlite_path: str | Path, schema: str):
         self.pg = bool(url and url.startswith(("postgres://", "postgresql://")))
         self.schema = schema
+        self.url = url
         if self.pg:
             from psycopg.rows import dict_row
             from psycopg_pool import ConnectionPool
+
+            # search_path is set per connection rather than as a startup option: connection poolers such as
+            # Neon's reject startup options, and a direct connection keeps the SET for its lifetime
+            def configure(conn: Any) -> None:
+                conn.execute(f"SET search_path TO {schema}, public")
 
             self.pool = ConnectionPool(
                 url,  # type: ignore[arg-type]
                 min_size=0,
                 max_size=4,
                 open=True,
-                kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row, "options": f"-c search_path={schema},public"},
+                configure=configure,
+                kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
             )
             with self.pool.connection() as c:
                 c.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
@@ -82,5 +89,6 @@ class DB:
 
 
 def connect(default_sqlite: str | Path, schema: str) -> DB:
-    url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+    # prefer the direct (unpooled) connection string: the per-connection search_path needs a real session
+    url = os.environ.get("DATABASE_URL_UNPOOLED") or os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
     return DB(url, os.environ.get(f"{schema.upper()}_DB", default_sqlite), schema)
